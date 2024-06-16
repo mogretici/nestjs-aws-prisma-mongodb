@@ -1,0 +1,38 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../generated/backend"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("BACKEND_DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  images    File[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  email     String   @unique
+  password  String
+  name      String
+}
+
+type File {
+  id       String? // Will not be nullable in the future
+  filename String?
+  url      String? // Not used when creating or updating, only when reading ( Set by server, S3 URL )
+  thumbUrl String? // Not used when creating or updating, only when reading ( Set by server, S3 URL )
+}
+
+model TokenWhiteList {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String
+  userEmail      String
+  accessToken    String?
+  refreshToken   String?
+  refreshTokenId String?
+  expiredAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now())
+}
