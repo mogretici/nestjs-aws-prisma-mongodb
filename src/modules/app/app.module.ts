@@ -16,29 +16,29 @@ import S3Module from '@providers/s3/s3.module';
 import { UserRepository } from '@modules/user/user.repository';
 
 @Module({
-  controllers: [],
-  imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-      load: [appConfig, swaggerConfig, jwtConfig, s3Config],
-    }),
-    JwtModule.register({
-      global: true,
-    }),
-    S3Module,
-    BackendPrismaModule,
-    HealthModule,
-    AuthModule,
-  ],
-  providers: [
-    TokenService,
-    JwtService,
-    TokenRepository,
-    UserRepository,
-    {
-      provide: APP_GUARD,
-      useClass: AuthGuard,
-    },
-  ],
+	controllers: [],
+	imports: [
+		ConfigModule.forRoot({
+			isGlobal: true,
+			load: [appConfig, swaggerConfig, jwtConfig, s3Config],
+		}),
+		JwtModule.register({
+			global: true,
+		}),
+		S3Module,
+		BackendPrismaModule,
+		HealthModule,
+		AuthModule,
+	],
+	providers: [
+		TokenService,
+		JwtService,
+		TokenRepository,
+		UserRepository,
+		{
+			provide: APP_GUARD,
+			useClass: AuthGuard,
+		},
+	],
 })
 export class AppModule {}

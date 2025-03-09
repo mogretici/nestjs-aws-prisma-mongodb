@@ -1,146 +1,113 @@
 import {
-  ArgumentsHost,
-  Catch,
-  HttpException,
-  HttpServer,
-  HttpStatus,
+	ArgumentsHost,
+	Catch,
+	HttpException,
+	HttpServer,
+	HttpStatus,
 } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
 import { Prisma } from '@backendPrisma';
 import { PRISMA_API_ERROR } from '@constants/errors.constants';
 
 export type ErrorCodesStatusMapping = {
-  [key: string]: number;
+	[key: string]: number;
 };
 
 /**
  * {@link PrismaClientExceptionFilter}
- * catches {@link Prisma.PrismaClientKnownRequestError}
- * and {@link Prisma.NotFoundError} exceptions.
+ * Catches {@link Prisma.PrismaClientKnownRequestError}
+ * and {@link Prisma.PrismaClientUnknownRequestError} exceptions.
  */
-@Catch(Prisma?.PrismaClientKnownRequestError, Prisma?.NotFoundError)
+@Catch(
+	Prisma?.PrismaClientKnownRequestError,
+	Prisma?.PrismaClientUnknownRequestError
+)
 export class PrismaClientExceptionFilter extends BaseExceptionFilter {
-  /**
-   * default error codes mapping
-   *
-   * Error codes definition for Prisma Client (Query Engine)
-   * @see https://www.prisma.io/docs/reference/api-reference/error-reference#prisma-client-query-engine
-   */
-  private errorCodesStatusMapping: ErrorCodesStatusMapping = {
-    P2000: HttpStatus.BAD_REQUEST,
-    P2002: HttpStatus.CONFLICT,
-    P2003: HttpStatus.CONFLICT,
-    P2025: HttpStatus.NOT_FOUND,
-  };
+	private errorCodesStatusMapping: ErrorCodesStatusMapping = {
+		P2000: HttpStatus.BAD_REQUEST,
+		P2002: HttpStatus.CONFLICT,
+		P2003: HttpStatus.CONFLICT,
+		P2025: HttpStatus.NOT_FOUND, // Record not found
+	};
 
-  /**
-   * @param applicationRef
-   * @param errorCodesStatusMapping
-   */
-  constructor(
-    applicationRef?: HttpServer,
-    errorCodesStatusMapping?: ErrorCodesStatusMapping,
-  ) {
-    super(applicationRef);
+	constructor(
+		applicationRef?: HttpServer,
+		errorCodesStatusMapping?: ErrorCodesStatusMapping
+	) {
+		super(applicationRef);
+		if (errorCodesStatusMapping) {
+			this.errorCodesStatusMapping = Object.assign(
+				this.errorCodesStatusMapping,
+				errorCodesStatusMapping
+			);
+		}
+	}
 
-    // use custom error codes mapping (overwrite)
-    //
-    // @example:
-    //
-    //   const { httpAdapter } = app.get(HttpAdapterHost);
-    //   app.useGlobalFilters(new PrismaClientExceptionFilter(httpAdapter, {
-    //     P2022: HttpStatus.BAD_REQUEST,
-    //   }));
-    //
-    if (errorCodesStatusMapping) {
-      this.errorCodesStatusMapping = Object.assign(
-        this.errorCodesStatusMapping,
-        errorCodesStatusMapping,
-      );
-    }
-  }
+	catch(
+		exception:
+			| Prisma.PrismaClientKnownRequestError
+			| Prisma.PrismaClientUnknownRequestError
+			| any,
+		host: ArgumentsHost
+	) {
+		if (exception instanceof Prisma.PrismaClientKnownRequestError) {
+			return this.catchClientKnownRequestError(exception, host);
+		}
+		if (exception instanceof Prisma.PrismaClientUnknownRequestError) {
+			return this.catchUnknownRequestError(exception, host);
+		}
+		return super.catch(exception, host);
+	}
 
-  /**
-   * @param exception
-   * @param host
-   * @returns
-   */
-  catch(
-    exception:
-      | Prisma.PrismaClientKnownRequestError
-      | Prisma.NotFoundError
-      | any,
-    host: ArgumentsHost,
-  ) {
-    if (exception instanceof Prisma.PrismaClientKnownRequestError) {
-      return this.catchClientKnownRequestError(exception, host);
-    }
-    if (exception instanceof Prisma.NotFoundError) {
-      return this.catchNotFoundError(exception, host);
-    }
-  }
+	private catchClientKnownRequestError(
+		exception: Prisma.PrismaClientKnownRequestError,
+		host: ArgumentsHost
+	) {
+		const statusCode =
+			this.errorCodesStatusMapping[exception.code] ||
+			HttpStatus.INTERNAL_SERVER_ERROR;
+		const message = this.exceptionShortMessage(exception.message);
 
-  private catchClientKnownRequestError(
-    exception: Prisma.PrismaClientKnownRequestError,
-    host: ArgumentsHost,
-  ) {
-    const statusCode = this.errorCodesStatusMapping[exception.code];
-    const message = this.exceptionShortMessage(exception.message);
+		const [code] = PRISMA_API_ERROR.split(':');
 
-    if (!Object.keys(this.errorCodesStatusMapping).includes(exception.code)) {
-      return super.catch(exception, host);
-    }
+		super.catch(
+			new HttpException(
+				{
+					success: false,
+					error: {
+						details: exception.code,
+						message,
+						code: parseInt(code, 10),
+					},
+				},
+				statusCode
+			),
+			host
+		);
+	}
 
-    const [code] = PRISMA_API_ERROR.split(':');
+	private catchUnknownRequestError(
+		exception: Prisma.PrismaClientUnknownRequestError,
+		host: ArgumentsHost
+	) {
+		super.catch(
+			new HttpException(
+				{
+					success: false,
+					error: {
+						message: 'An unknown error occurred in the Prisma client.',
+					},
+				},
+				HttpStatus.INTERNAL_SERVER_ERROR
+			),
+			host
+		);
+	}
 
-    super.catch(
-      new HttpException(
-        {
-          success: false,
-          error: {
-            details: exception.code,
-            message,
-            code: parseInt(code, 10),
-          },
-        },
-        statusCode,
-      ),
-      host,
-    );
-  }
-
-  private catchNotFoundError(
-    { message }: Prisma.NotFoundError,
-    host: ArgumentsHost,
-  ) {
-    const statusCode = HttpStatus.NOT_FOUND;
-
-    const [prismaCode, msg] = message.split(':');
-
-    const [code] = PRISMA_API_ERROR.split(':');
-
-    super.catch(
-      new HttpException(
-        {
-          success: false,
-          error: {
-            details: prismaCode,
-            message: msg.trim(),
-            code: parseInt(code, 10),
-          },
-        },
-        statusCode,
-      ),
-      host,
-    );
-  }
-
-  private exceptionShortMessage(message: string): string {
-    const shortMessage = message.substring(message.indexOf('→'));
-
-    return shortMessage
-      .substring(shortMessage.indexOf('\n'))
-      .replace(/\n/g, '')
-      .trim();
-  }
+	private exceptionShortMessage(message: string): string {
+		const shortMessage = message.includes('→')
+			? message.substring(message.indexOf('→'))
+			: message;
+		return shortMessage.replace(/\n/g, '').trim();
+	}
 }
